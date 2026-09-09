@@ -174,6 +174,25 @@ await clickDialog(/^Cancel$/);
 check("cancelling returns to the login screen",
   await waitFor("backtologin", () => seeing(/Steam accounts need a lobby password/)));
 
+/* The lobby is not a constant: the field starts from whatever the installed
+   game says, and can be pointed at another server. Checked before logging in,
+   because logging in is what consumes it. */
+console.log("server");
+/* By position, as the rest of this file does. An error on the field
+   changes its accessible name, so a label locator stops matching the
+   moment the thing being tested happens. */
+const serverField = page.locator("input").nth(2);
+check("the server field is filled from the game rather than a built-in default",
+  (await serverField.inputValue()) === "lobby.example.test");
+await serverField.fill("lobby.example.test:notaport");
+await page.waitForTimeout(150);
+check("a bad port is explained instead of dialled",
+  await waitFor("badport", () => seeing(/is not a port number/)));
+await serverField.fill("lobby.example.test");
+await page.waitForTimeout(150);
+check("and correcting it clears the complaint",
+  await waitFor("goodport", async () => !(await seeing(/is not a port number/))));
+
 console.log("login");
 await page.locator("input").nth(0).fill(USER);
 await page.locator("input").nth(1).fill(PASS);

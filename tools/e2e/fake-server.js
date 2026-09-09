@@ -368,6 +368,16 @@
             archivePrefix: "",
             services: ["lobby", "contentSearch", "battleHistory", "profiles",
               "codex", "campaign"],
+            /* Declaring `lobby` without an address is what the registry's own
+               `a_game_offering_the_lobby_has_one_this_build_can_speak` forbids,
+               and this fake had drifted from it: the login screen now resolves
+               a server before dialling, and a game offering a lobby with
+               nowhere to reach it is refused rather than sent to a default.
+
+               A `.test` host on purpose - the bridge below answers
+               `zks_connect`, so nothing is dialled, and a real hostname here
+               would be a live address sitting in a test fixture. */
+            lobby: { host: "lobby.example.test", port: 8200, protocol: "zkLobby" },
             /* And every integration, for the same reason as the services above:
                the Add-ons kinds are gated on these, so an empty list hides
                Widgets and the widget tests fail on a missing button rather than

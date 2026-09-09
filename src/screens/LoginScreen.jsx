@@ -1,5 +1,7 @@
 import React from "react";
 import { Button, Input, Checkbox, Icon } from "../ds/shiro.js";
+
+import { formatServer, parseServer } from "../net/serverAddress.ts";
 import glaive from "../assets/art/glaive-sidelit.png";
 import LogoMark from "./LogoMark.jsx";
 import { skinAssets } from "../net/skins.ts";
@@ -10,7 +12,9 @@ import { skinAssets } from "../net/skins.ts";
    onLogin(name, password, remember) may be async and may reject; the rejection
    message is shown against the password field. It is never retried automatically - the
    server logs failed attempts by IP and bans repeat offenders. */
-export default function LoginScreen({ onLogin, onRegister, onSteam, steamReady, steamNote, live, defaultName, defaultPassword, defaultRemember, skin, activeGame }) {
+export default function LoginScreen({ onLogin, onRegister, onSteam, steamReady,
+  steamNote, live, defaultName, defaultPassword, defaultRemember, defaultServer,
+  skin, activeGame }) {
   /* The copy names the game rather than assuming one. Login only exists for
      a game with a lobby, so there is always a game to name - but which one is
      not this screen's to decide, and it used to say Zero-K whatever it was.
@@ -36,12 +40,44 @@ export default function LoginScreen({ onLogin, onRegister, onSteam, steamReady, 
   const [error, setError] = React.useState("");
   const [remember, setRemember] = React.useState(defaultRemember !== false);
 
+  /* The lobby to dial.
+   *
+   * Mashiro is not one game's client, so this cannot be a constant. It starts
+   * as whatever the installed game says its lobby is - out of the registry, not
+   * a build-time default - and stays editable, because pointing a lobby client
+   * at a private or test server is an ordinary thing to want.
+   *
+   * The port is only shown when it is not the game's own, so the usual case
+   * reads as a hostname and nothing else. */
+  const lobby = activeGame?.lobby;
+  const defaultPort = lobby?.port ?? 8200;
+  const [server, setServer] = React.useState(defaultServer ?? "");
+  /* Whether this is the player's text or ours. The game is resolved after the
+     first render, so the field starts empty and has to be filled in when the
+     answer arrives - but only while nobody has typed, or it would overwrite
+     somebody mid-address. */
+  const [typed, setTyped] = React.useState(Boolean(defaultServer));
+  React.useEffect(() => {
+    if (typed || !lobby) return;
+    setServer(formatServer(lobby, lobby.port));
+  }, [typed, lobby?.host, lobby?.port]);
+
+  const parsed = parseServer(server, defaultPort);
+
   const submit = async () => {
     if (!name || !pw) { setError("Enter a name and password."); return; }
+    /* Refused here rather than dialled and left to fail: a wrong port is a
+       connection to somebody else's machine, and the error it comes back with
+       says nothing about the typo that caused it. */
+    if (parsed.error) { setError(parsed.error); return; }
+    if (!parsed.server && !lobby) {
+      setError("No lobby server. Enter one, or install a game that has one.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await onLogin(name, pw, remember);
+      await onLogin(name, pw, remember, parsed.server ?? lobby);
     } catch (e) {
       setError(e && e.message ? e.message : String(e));
     } finally {
@@ -107,6 +143,15 @@ export default function LoginScreen({ onLogin, onRegister, onSteam, steamReady, 
           onKeyDown={e => e.key === "Enter" && submit()} />
         <Input label="Password" type="password" value={pw} onChange={e => setPw(e.target.value)}
           onKeyDown={e => e.key === "Enter" && submit()} error={error || undefined} />
+        {/* Below the credentials, because the default is nearly always right
+            and a field somebody has to look past is a field in the way. Its own
+            error is shown here rather than on the password, which is where the
+            login error goes. */}
+        <Input label="Server" value={server}
+          onChange={e => { setTyped(true); setServer(e.target.value); }}
+          icon="globe" placeholder={formatServer(lobby, defaultPort) || "host or host:port"}
+          onKeyDown={e => e.key === "Enter" && submit()}
+          error={server.trim() && parsed.error ? parsed.error : undefined} />
         <Checkbox label="Stay logged in" checked={remember}
           onChange={e => setRemember(e.target.checked)} />
         <Button variant="primary" size="lg" block loading={busy} onClick={submit}>

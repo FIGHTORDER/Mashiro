@@ -3,7 +3,7 @@
  * batch the inbound flood.
  */
 import {
-  connect, disconnect, onLine, onStatus, passwordHash, sendLine, LIVE,
+  connect, disconnect, onLine, onStatus, passwordHash, sendLine,
 } from "./connection";
 import { parseLine, serialize } from "../protocol/wire";
 import type { CommandName, Message, MessageMap } from "../protocol/registry";
@@ -197,8 +197,8 @@ export function reconnectNow(): void {
  */
 export async function login(
   creds: Credentials,
-  host: string = LIVE.host,
-  port: number = LIVE.port,
+  host: string,
+  port: number,
 ): Promise<ConnectionState> {
   await teardown();
 
@@ -341,9 +341,9 @@ export async function login(
  */
 export async function register(
   creds: Credentials,
-  email?: string,
-  host: string = LIVE.host,
-  port: number = LIVE.port,
+  email: string | undefined,
+  host: string,
+  port: number,
 ): Promise<void> {
   await teardown();
   const hash = await passwordHash(creds.password);

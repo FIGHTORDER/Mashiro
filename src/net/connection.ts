@@ -10,9 +10,20 @@ export type RelayStatus =
   | { kind: "connected" }
   | { kind: "disconnected"; reason: string };
 
-export const LIVE = { host: "zero-k.info", port: 8200 } as const;
-
-export function connect(host: string = LIVE.host, port: number = LIVE.port): Promise<void> {
+/**
+ * Where to connect, when nobody has said.
+ *
+ * There is no such place. Mashiro is not one game's client: the lobby comes
+ * from the installed game's registry entry, or from what somebody typed on the
+ * login screen, and a build-time constant here meant every install dialled
+ * zero-k.info whatever game was on disk - including games with a lobby of their
+ * own, and games with none at all.
+ *
+ * So the host is required, and a caller that has not resolved one is a bug
+ * rather than a Zero-K user.
+ */
+export function connect(host: string, port: number): Promise<void> {
+  if (!host) throw new Error("No lobby server to connect to.");
   return invoke("zks_connect", { host, port });
 }
 

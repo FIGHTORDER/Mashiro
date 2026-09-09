@@ -37,6 +37,7 @@ import FirstRunInstallDialog from "./screens/FirstRunInstallDialog.jsx";
 import LoadingDialog from "./screens/LoadingDialog.jsx";
 
 import { inTauri } from "./net/connection";
+import { formatServer } from "./net/serverAddress.ts";
 import { login, register, teardown, send, say, reconnectNow } from "./net/session";
 import { useLobby } from "./store/lobby";
 import { useRoom } from "./store/room";
@@ -586,17 +587,35 @@ export default function App() {
      renders. */
   const ignored = React.useMemo(() => new Set(ignoreNames), [ignoreNames]);
 
-  const handleLogin = React.useCallback(async (name, password, remember) => {
+  /* Which lobby, for the paths that have no form to read it off: the Steam
+     button and registration. What was saved wins, then the installed game's own
+     - the same order the login screen resolves in. Never a constant: dialling
+     zero-k.info because nobody said otherwise is what this replaced. */
+  const lobbyServer = React.useCallback(() => {
+    const saved = useSettings.getState();
+    if (saved.host) return { host: saved.host, port: saved.port ?? 8200 };
+    const own = activeGame?.lobby;
+    return own ? { host: own.host, port: own.port } : undefined;
+  }, [activeGame]);
+
+  const handleLogin = React.useCallback(async (name, password, remember, server) => {
     // Remember the name either way - it is not a secret, and typing it every
     // time is the single most annoying thing a lobby can do.
     useSettings.getState().set({ name, remember: Boolean(remember),
       password: remember ? password : undefined });
+    /* And the server, always. It is not a secret either, and somebody pointing
+       this at their own lobby should not have to type it again next launch. */
+    if (server?.host) {
+      useSettings.getState().set({ host: server.host, port: server.port });
+    }
     if (!live) {
       await new Promise(r => setTimeout(r, 700));
       setLoggedIn(true);
       return;
     }
-    const { host, port } = useSettings.getState();
+    const saved = useSettings.getState();
+    const host = server?.host ?? saved.host;
+    const port = server?.port ?? saved.port;
     setLoadingIn(true);
     try {
       /* The outcome login settled on, not whatever the store says now: a
@@ -637,9 +656,10 @@ export default function App() {
     setLoadingIn(true);
     try {
       const ticket = await steamTicket();
-      const { host, port } = useSettings.getState();
+      const server = lobbyServer();
+      if (!server) throw new Error("No lobby server. Set one on the login screen.");
       const c = await login({ name: "", password: "", steamTicket: ticket },
-        host || undefined, port || undefined);
+        server.host, server.port);
       /* Left up on success, as the password path leaves it: being accepted is
          not being usable, and the effect below clears it once the directory
          the server floods down has actually landed. */
@@ -658,7 +678,7 @@ export default function App() {
       setLoadingIn(false);
       setSteamNote(String(e?.message ?? e));
     }
-  }, [live]);
+  }, [live, lobbyServer]);
 
   /* The dialog stays up past the LoginResponse. Being accepted is not the same
      as being usable: the server then floods the whole directory down - hundreds
@@ -799,14 +819,15 @@ export default function App() {
       setLoggedIn(true);
       return;
     }
-    const { host, port } = useSettings.getState();
-    await register({ name, password }, email, host || undefined, port || undefined);
+    const server = lobbyServer();
+    if (!server) throw new Error("No lobby server. Set one on the login screen.");
+    await register({ name, password }, email, server.host, server.port);
     // register() logs in on success, so anything left is a real failure.
     const c = useLobby.getState().connection;
     if (c.kind !== "online") throw new Error(describeFailure(c));
     useSettings.getState().set({ name });
     setLoggedIn(true);
-  }, [live]);
+  }, [live, lobbyServer]);
 
   const handleLogout = React.useCallback(() => {
     // Every store holds session state; leaving any of it behind would show the
@@ -935,7 +956,11 @@ export default function App() {
             onSteam={handleSteamLogin} steamReady={steamReady} steamNote={steamNote}
             onRegister={() => setRegistering(true)}
             defaultName={settings.name} defaultPassword={settings.password}
-            defaultRemember={settings.remember} skin={settings.skin} />
+            defaultRemember={settings.remember} skin={settings.skin}
+            defaultServer={settings.host
+              ? formatServer({ host: settings.host, port: settings.port ?? 0 },
+                activeGame?.lobby?.port ?? 8200)
+              : undefined} />
         </ErrorBoundary>
         <RegisterDialog open={registering} onClose={() => setRegistering(false)}
           onRegister={handleRegister} />
