@@ -73,6 +73,23 @@ pub struct Installed {
     unscanned: HashMap<String, String>,
 }
 
+/// `fold` lowercases and collapses runs of whitespace but keeps the separator,
+/// so `Zero-K v1.14.8.0` folds to `zero-k v1.14.8.0` and the tail after a
+/// `zero-k` prefix is ` v1.14.8.0` - the leading space included. `ZERO-K BIG
+/// BOYS` leaves ` big boys`. Past the separator, a version starts with a digit,
+/// with or without a `v` in front; more name does not.
+///
+/// An empty tail is the archive itself, which the exact-match arm has already
+/// taken, but it is allowed here so the rule reads as one thing.
+fn is_version_suffix(tail: &str) -> bool {
+    let tail = tail.trim_start_matches([' ', '-', '_', '.']);
+    if tail.is_empty() {
+        return true;
+    }
+    let tail = tail.strip_prefix('v').unwrap_or(tail);
+    tail.starts_with(|c: char| c.is_ascii_digit())
+}
+
 impl Installed {
     /// Every game archive the engine has scanned, by its own name.
     ///
@@ -121,6 +138,14 @@ impl Installed {
     /// has to be the second or the engine stops with an error about the map,
     /// which reads like the map is missing when it is not.
     ///
+    /// **What follows the prefix has to be a version.** A bare prefix is not
+    /// enough, because a mutator is named after the game it modifies: with
+    /// `ZERO-K BIG BOYS` on disk beside `Zero-K v1.14.8.0`, both start with the
+    /// same prefix, two matched, and "Zero-K" resolved to nothing at all - so a
+    /// launch was refused with "no game installed" on a machine that had one.
+    /// Splaunch hit the same collision the other way and picked the mutator as
+    /// the base game (FIGHTORDER/Splaunch#1).
+    ///
     /// A prefix counts only when one archive matches it. Two versions of a map
     /// installed side by side is ordinary, and starting the wrong one silently
     /// is worse than saying nothing matched. The same rule finds the game:
@@ -133,7 +158,10 @@ impl Installed {
         if let Some(exact) = self.names.get(&key) {
             return Some(exact.clone());
         }
-        let mut near = self.names.iter().filter(|(k, _)| k.starts_with(&key));
+        let mut near = self
+            .names
+            .iter()
+            .filter(|(k, _)| k.starts_with(&key) && is_version_suffix(&k[key.len()..]));
         let (_, first) = near.next()?;
         if near.next().is_some() {
             return None;
@@ -766,5 +794,43 @@ mod tests {
         assert_eq!(first.len(), second.len());
         assert!(second.has("Argent Strata 1.1"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod mutator_tests {
+    use super::*;
+
+    /// A Zero-K install with a mutator beside it, which is the ordinary shape:
+    /// playing one campaign mission leaves its archive on disk for good.
+    fn with_big_boys() -> Installed {
+        let mut out = Installed::default();
+        out.insert("Zero-K v1.14.8.0");
+        out.insert("ZERO-K BIG BOYS");
+        out
+    }
+
+    #[test]
+    fn a_mutator_beside_the_game_does_not_hide_it() {
+        /* Splaunch#1 is the same collision seen from the other side. There it
+           picked the mutator; here `resolve` sees two archives whose folded
+           names both start with `zerok`, calls that ambiguous and answers
+           `None` - so a start script gets no game and the launch is refused
+           with "No Zero-K is installed", on a machine that plainly has it. */
+        let got = with_big_boys().resolve("Zero-K");
+        assert_eq!(
+            got.as_deref(),
+            Some("Zero-K v1.14.8.0"),
+            "the mutator hid the game it is a mutator for"
+        );
+    }
+
+    #[test]
+    fn the_mutator_still_resolves_as_itself() {
+        // Planets 69 and 71 name mutators, so this has to keep working.
+        assert_eq!(
+            with_big_boys().resolve("ZERO-K BIG BOYS").as_deref(),
+            Some("ZERO-K BIG BOYS")
+        );
     }
 }
