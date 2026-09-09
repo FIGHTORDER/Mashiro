@@ -1,0 +1,205 @@
+use tauri::Manager;
+
+mod ais;
+mod archives;
+mod campaigns;
+mod games;
+mod rapid;
+mod rapidrepos;
+mod content;
+mod content_source;
+mod services;
+mod springfiles;
+mod engine;
+mod engine_settings;
+mod game_files;
+mod install;
+mod launch;
+mod lobbybutton;
+mod loadscreen;
+mod managed;
+mod mapview;
+mod relay;
+mod transport;
+mod replays;
+mod sidecar;
+mod gitsource;
+mod skins;
+mod steam;
+mod widgets;
+mod zk;
+mod uiskins;
+mod apps;
+
+pub fn run() {
+    tauri::Builder::default()
+        /* Single instance first, and it has to be first: the plugin works by
+           refusing to start a second process, and anything registered before it
+           would run in a process that is about to exit.
+
+           Zero-K's links are `zk://` and the Zero-K client claims that scheme
+           too, so a machine with both hands them to whichever installed last.
+           That is understood and accepted: we behave like the client we are
+           replacing.
+
+           Without this, following a link while Shiro is already open would
+           start a second Shiro, which would fail to bind the relay and leave
+           two windows arguing about one account. */
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            /* The link itself needs nothing here. With the `deep-link` feature
+               on, this plugin hands the second process's command line to the
+               deep-link plugin before this callback runs, and that is what
+               fires `onOpenUrl` in the window that already exists. Reading argv
+               here as well would deliver every link twice.
+
+               What is left is the part no plugin does: somebody who followed a
+               link expects a window, so raise the one there is. */
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
+        /* Bundled apps are put in place before the window opens, so the
+           launcher's first paint is already the truth. A failure here is not
+           worth refusing to start the lobby over - the app simply shows as not
+           installed, which is what it is. */
+        .setup(|app| {
+            /* Before anything detects an install. Detection is otherwise blind
+               to the directory Shiro fills itself, and knew about it only
+               through a setting the browser can lose. */
+            /* Every managed directory, not just the default one: there is one
+               per game now, and a machine with only Balanced Annihilation
+               installed would otherwise look empty. The default is registered
+               too, so a first run with nothing yet still knows where it goes. */
+            let mut roots = managed::existing_roots(app.handle());
+            if let Ok(default) = managed::root(app.handle()) {
+                if !roots.contains(&default) {
+                    roots.push(default);
+                }
+            }
+            install::set_managed_roots(roots);
+            /* Maximized here rather than in `tauri.conf.json`.
+             *
+             * A Wayland client does not get to choose the size of a maximized
+             * surface - the compositor does - so a window asked to start
+             * maximized is created before that negotiation has happened, and
+             * tao's handling of it is a standing bug (tauri-apps/tao#977: the
+             * maximized state reports 0x0 while the configured size says
+             * otherwise, and the surface mismatches). GNOME users report the
+             * window drawing normally and passing every click through to
+             * whatever is behind it, which is what an empty input region looks
+             * like from the outside (FIGHTORDER/shiro#19).
+             *
+             * Maximizing once the window exists lets the surface be made at a
+             * size both ends agree on and then resized, which is the ordinary
+             * path every other app takes. Windows and macOS reach the same end
+             * state either way.
+             *
+             * UNCONFIRMED against the reporter's setup: it is GNOME on Wayland,
+             * and WSLg's compositor is not Mutter, so this could not be
+             * reproduced here. The timing is what points at it - the config
+             * line landed in 9b1d068 on the same day the issue was filed. */
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.maximize();
+            }
+            managed::seed_loadscreen(app.handle());
+            if let Err(e) = apps::seed_bundled(app.handle()) {
+                eprintln!("could not place the bundled apps: {e}");
+            }
+            Ok(())
+        })
+        .plugin(tauri_plugin_opener::init())
+        .manage(relay::Relay::default())
+        .manage(launch::Game::default())
+        .manage(content::Content::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![
+            games::zks_games,
+            games::zks_active_game,
+            rapidrepos::zks_rapid_games,
+            rapidrepos::zks_installed_games,
+            relay::zks_connect,
+            relay::zks_send,
+            relay::zks_disconnect,
+            relay::zks_password_hash,
+            launch::zks_locate_install,
+            launch::zks_launch_spring,
+            launch::zks_launch_preview,
+            engine_settings::zks_read_engine_settings,
+            engine_settings::zks_write_engine_settings,
+            game_files::zks_read_lups,
+            game_files::zks_write_lups,
+            game_files::zks_write_cmdcolors,
+            content::zks_content_fetch,
+            content::zks_content_cancel,
+            content::zks_content_preflight,
+            content::zks_content_log,
+            ais::zks_list_ais,
+            replays::zks_list_replays,
+            replays::zks_replay_stats,
+            replays::zks_watch_replay,
+            zk::battles::zks_search_battles,
+            zk::battles::zks_lookup_players,
+            zk::battles::zks_download_replay,
+            zk::content::zks_find_maps,
+            zk::content::zks_game_modes,
+            zk::content::zks_map_catalogue,
+            mapview::zks_map_terrain,
+            managed::zks_managed_root,
+            managed::zks_managed_state,
+            managed::zks_managed_prepare,
+            managed::zks_managed_install_engine,
+            managed::zks_managed_remove,
+            managed::zks_loadscreen_state,
+            managed::zks_loadscreen_set,
+            skins::zks_skin_catalogue,
+            skins::zks_skin_status,
+            skins::zks_skin_install,
+            skins::zks_skin_remove,
+            skins::zks_skin_load,
+            widgets::zks_widgets_list,
+            uiskins::zks_uiskin_catalogue,
+            uiskins::zks_uiskin_status,
+            uiskins::zks_uiskin_install,
+            uiskins::zks_uiskin_remove,
+            zk::campaignpack::zks_read_campaign,
+            zk::galaxy::zks_galaxy_save,
+            zk::galaxy::zks_galaxy_set_difficulty,
+            zk::galaxy::zks_galaxy_finish,
+            zk::galaxy::zks_galaxy_unlock,
+            zk::galaxy::zks_galaxy_read_codex,
+            zk::galaxy::zks_galaxy_set_loadout,
+            zk::galaxy::zks_galaxy_restart,
+            zk::galaxy::zks_galaxy_play,
+            campaigns::zks_campaign_catalogue,
+            campaigns::zks_campaign_list,
+            campaigns::zks_campaign_install,
+            campaigns::zks_campaign_install_file,
+            campaigns::zks_campaign_install_upload,
+            campaigns::zks_campaign_remove,
+            campaigns::zks_campaign_play,
+            campaigns::zks_campaign_finish,
+            steam::zks_steam_available,
+            steam::zks_steam_ticket,
+            widgets::zks_widget_addons,
+            widgets::zks_widget_install,
+            widgets::zks_widget_remove,
+            widgets::zks_widget_set_enabled,
+            widgets::zks_widgets_local_enabled,
+            widgets::zks_widgets_reset,
+            widgets::zks_widget_fetch,
+            widgets::zks_widget_preview,
+            apps::zka_catalogue,
+            apps::zka_status,
+            apps::zka_install,
+            apps::zka_launch,
+            apps::zka_uninstall,
+            zk::web::zkw_profile,
+            zk::web::zkw_ratings,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

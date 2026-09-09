@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mashiro",
+  "version": "1.0.0",
+  "identifier": "io.github.fightorder.mashiro",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Mashiro",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "decorations": false,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://zero-k.info; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    },
+    "category": "Game",
+    "shortDescription": "A lobby client for Zero-K",
+    "resources": [
+      "resources/sprofiler/*",
+      "resources/steam/steam_api64.dll",
+      "resources/campaign/**/*"
+    ],
+    "externalBin": [
+      "binaries/mashiro-steam"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1NENFNkFDRTExRkE3NkUKUldSdXB4L2hyT1pNZFFya1luYkZlZGVZUDJna2lLcDhuTVNsWS9qa2I3OCt3bTdyTFQyQjFpVk8K",
+      "endpoints": [
+        "https://github.com/FIGHTORDER/Mashiro/releases/download/dev/latest.json"
+      ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "zk"
+        ]
+      }
+    }
+  }
+}

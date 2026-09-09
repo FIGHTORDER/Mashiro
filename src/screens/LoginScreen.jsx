@@ -1,0 +1,155 @@
+import React from "react";
+import { Button, Input, Checkbox, Icon } from "../ds/shiro.js";
+import glaive from "../assets/art/glaive-sidelit.png";
+import LogoMark from "./LogoMark.jsx";
+import { skinAssets } from "../net/skins.ts";
+
+/* Screen 1. First impression, and the only place the "Steam users must set a
+   password" caveat is explained.
+
+   onLogin(name, password, remember) may be async and may reject; the rejection
+   message is shown against the password field. It is never retried automatically - the
+   server logs failed attempts by IP and bans repeat offenders. */
+export default function LoginScreen({ onLogin, onRegister, onSteam, steamReady, steamNote, live, defaultName, defaultPassword, defaultRemember, skin, activeGame }) {
+  /* The copy names the game rather than assuming one. Login only exists for
+     a game with a lobby, so there is always a game to name - but which one is
+     not this screen's to decide, and it used to say Zero-K whatever it was.
+     `host` rather than the full URL, because that is how a person says it. */
+  const gameName = activeGame?.name ?? "this game";
+  const site = activeGame?.site;
+  const host = site ? site.replace(/^https?:\/\//, "") : undefined;
+  /* The plate a downloaded skin brought, if any. Looked up after mount as well
+     as on the skin changing, because a downloaded skin's files land a tick
+     after the attribute does. */
+  const [skinArt, setSkinArt] = React.useState(undefined);
+  React.useEffect(() => {
+    let live = true;
+    const read = () => { if (live) setSkinArt(skinAssets()["login.png"]); };
+    read();
+    const t = setTimeout(read, 140);
+    return () => { live = false; clearTimeout(t); };
+  }, [skin]);
+
+  const [name, setName] = React.useState(defaultName || "");
+  const [pw, setPw] = React.useState(defaultPassword || "");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [remember, setRemember] = React.useState(defaultRemember !== false);
+
+  const submit = async () => {
+    if (!name || !pw) { setError("Enter a name and password."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      await onLogin(name, pw, remember);
+    } catch (e) {
+      setError(e && e.message ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 400px", minHeight: 0,
+      background: "var(--surface-void)" }}>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column",
+        justifyContent: "center", gap: "var(--sp-9)", padding: "var(--sp-12)",
+        borderRight: "1px solid var(--w-12)", overflow: "hidden" }}>
+
+        {/* A Glaive, rendered from the game's own model as hard two-tone ink.
+            Anchored to the bottom-right and bled off both edges so it reads as
+            a printed plate rather than a sticker, and sits behind the type
+            without competing with it.
+
+            Black ink on transparent, so a dark skin has to invert it;
+            --art-filter is that hook and resolves to `none` in the light
+            system. Same on the friends screen and the loading dialog. */}
+        {/* A downloaded skin may bring its own plate as `login.png`. It takes no
+            filter: the invert that recolours the ink plate for a dark skin
+            would ruin a coloured one. Its framing is its own, because a plate
+            drawn for a different pose does not sit where this one does. */}
+        {skinArt ? (
+          <img src={skinArt} alt="" aria-hidden="true"
+            style={{ position: "absolute", right: "-14%", bottom: "-8%", height: "78%", width: "auto",
+              pointerEvents: "none", userSelect: "none" }} />
+        ) : (
+          <img src={glaive} alt="" aria-hidden="true"
+            style={{ position: "absolute", right: "3%", bottom: "0%", height: "82%", width: "auto",
+              filter: "var(--art-filter, none)", pointerEvents: "none", userSelect: "none" }} />
+        )}
+
+        {/* The type sits above the art, on its own so long copy stays readable
+            wherever the figure happens to fall. */}
+        <div style={{ position: "relative", display: "flex", alignItems: "center",
+          gap: "var(--sp-6)" }}>
+          <LogoMark size={72} />
+          <span style={{ font: "var(--w-bold) var(--size-4xl)/1 var(--font-core)", fontStretch: "100%",
+            letterSpacing: "var(--track-wordmark)", color: "var(--text-hi)" }}>MASHIRO</span>
+        </div>
+        <div style={{ position: "relative", display: "flex", flexDirection: "column",
+          gap: "var(--sp-4)", maxWidth: "44ch" }}>
+          <span style={{ font: "var(--w-regular) var(--size-mid)/1.5 var(--font-core)", color: "var(--text-mid)" }}>
+            A lobby client for Recoil games.
+          </span>
+          {!live && (
+            <span style={{ font: "var(--w-regular) var(--size-tiny)/1.5 var(--font-core)", color: "var(--text-faint)" }}>
+              Running in the browser, so this is the demo click-through. Launch the
+              desktop app to connect{host ? ` to ${host}` : ""}.
+            </span>
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center",
+        gap: "var(--sp-6)", padding: "var(--sp-9)" }}>
+        <span style={{ font: "var(--text-label)", letterSpacing: "var(--track-label)",
+          textTransform: "uppercase", color: "var(--text-low)" }}>LOG IN</span>
+        <Input label="Account name" value={name} onChange={e => setName(e.target.value)} icon="user"
+          onKeyDown={e => e.key === "Enter" && submit()} />
+        <Input label="Password" type="password" value={pw} onChange={e => setPw(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit()} error={error || undefined} />
+        <Checkbox label="Stay logged in" checked={remember}
+          onChange={e => setRemember(e.target.checked)} />
+        <Button variant="primary" size="lg" block loading={busy} onClick={submit}>
+          {busy ? "Connecting" : "Log in"}
+        </Button>
+        {/* Not a ghost button. Registration is one of the two things this
+            screen is for, and at ghost weight it read as decoration - it was
+            reported missing by somebody looking straight at it. */}
+        <Button variant="secondary" size="sm" block onClick={onRegister}>Create an account</Button>
+
+        {/* Only where it can work: the helper that mints a ticket ships with
+            the desktop build, so a browser tab and a machine without it never
+            see a button that could only fail. */}
+        {steamReady && (
+          <Button variant="secondary" size="sm" block loading={busy} onClick={onSteam}>
+            Sign in with Steam
+          </Button>
+        )}
+
+        {/* What the Steam attempt said, when it said something. Kept apart from
+            the form's own error: "your Steam account is not linked yet" is an
+            instruction to use the form, not a complaint about it. */}
+        {steamNote && (
+          <div role="status" style={{ display: "flex", gap: "var(--sp-4)", padding: "var(--sp-5)",
+            background: "var(--surface-sunken)", border: "1px solid var(--w-12)" }}>
+            <Icon name="info" size={14} style={{ color: "var(--text-hi)", marginTop: 2 }} />
+            <span style={{ font: "var(--w-regular) var(--size-tiny)/1.5 var(--font-core)",
+              color: "var(--text-body)" }}>{steamNote}</span>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: "var(--sp-4)", padding: "var(--sp-5)",
+          background: "var(--surface-sunken)", border: "1px solid var(--w-06)" }}>
+          <Icon name="info" size={14} style={{ color: "var(--text-low)", marginTop: 2 }} />
+          <span style={{ font: "var(--w-regular) var(--size-tiny)/1.5 var(--font-core)", color: "var(--text-low)" }}>
+            {steamReady
+              ? `Signing in with Steam works once your Steam account is linked to a ${gameName} account. If it is not, log in once with your ${gameName} name and password and Mashiro will link them.`
+              : `Steam accounts need a lobby password.${host ? ` Set one on ${host},` : " Set one,"} then log in here.`}
+            {" "}Account names are case-sensitive.
+            {host ? ` Mashiro talks only to ${host}.` : ""}
+            {" "}Staying logged in saves your password on this computer.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
